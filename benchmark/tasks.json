@@ -1,0 +1,82 @@
+[
+  {
+    "id": "task_001",
+    "description": "[Đơn giản] Tính 15 * 17 và lưu kết quả vào file",
+    "instruction": "Tính 15 nhân 17. Lưu kết quả vào file result.txt",
+    "eval_type": "functional",
+    "eval_script": "test -f result.txt && grep -q 255 result.txt && echo PASS",
+    "max_steps": 6
+  },
+  {
+    "id": "task_002",
+    "description": "[Đơn giản] Tính số ngày giữa hai mốc thời gian",
+    "instruction": "Tính số ngày giữa ngày 2026-01-01 và ngày 2026-07-09. Trả lời bằng đúng con số đó.",
+    "eval_type": "keyword",
+    "expected_keywords": ["189"],
+    "max_steps": 6
+  },
+  {
+    "id": "task_003",
+    "description": "[Đơn giản] Ghi một chuỗi văn bản vào file",
+    "instruction": "Ghi nội dung 'Xin chao AI Agent' vào file greeting.txt",
+    "eval_type": "functional",
+    "eval_script": "test -f greeting.txt && grep -q 'Xin chao AI Agent' greeting.txt && echo PASS",
+    "max_steps": 6
+  },
+  {
+    "id": "task_004",
+    "description": "[Đơn giản] Tính giá trị một biểu thức số học có dấu ngoặc",
+    "instruction": "Tính giá trị biểu thức (8 + 12) * 3 - 5. Trả lời bằng đúng con số kết quả.",
+    "eval_type": "keyword",
+    "expected_keywords": ["55"],
+    "max_steps": 6
+  },
+  {
+    "id": "task_005",
+    "description": "[Trung bình] Tính toán rồi ghi file có điều kiện (rẽ nhánh theo kết quả)",
+    "instruction": "Tính 9 nhân 9. Nếu kết quả lớn hơn 50 thì lưu kết quả vào file big.txt, ngược lại thì lưu vào file small.txt",
+    "eval_type": "functional",
+    "eval_script": "test -f big.txt && grep -q 81 big.txt && echo PASS",
+    "max_steps": 8
+  },
+  {
+    "id": "task_006",
+    "description": "[Trung bình] Kết hợp 2 lần gọi tool datetime rồi ghi file",
+    "instruction": "Lấy ngày hiện tại theo định dạng YYYY-MM-DD, sau đó tính ngày sau khi cộng thêm 10 ngày kể từ ngày đó, và lưu kết quả (chỉ ngày, định dạng YYYY-MM-DD) vào file future_date.txt",
+    "eval_type": "functional",
+    "eval_script": "test -s future_date.txt && echo PASS",
+    "max_steps": 8
+  },
+  {
+    "id": "task_007",
+    "description": "[Trung bình] Tính toán, lưu vào bộ nhớ dài hạn rồi xác nhận lại bằng tìm kiếm",
+    "instruction": "Tính tổng của 3 số 12, 45 và 78 bằng công cụ tính toán. Sau đó lưu kết quả vào bộ nhớ dài hạn với key là 'sum_result'. Cuối cùng tìm kiếm lại trong bộ nhớ với từ khoá 'sum_result' để xác nhận đã lưu đúng, rồi trả lời giá trị tổng.",
+    "eval_type": "keyword",
+    "expected_keywords": ["135"],
+    "max_steps": 8
+  },
+  {
+    "id": "task_008",
+    "description": "[Trung bình] Kết hợp tool exec (lệnh shell) và tool file",
+    "instruction": "Dùng lệnh shell để đếm số file trong thư mục hiện tại (gợi ý: lệnh 'ls -1 | wc -l'), sau đó ghi số lượng đếm được vào file file_count.txt",
+    "eval_type": "functional",
+    "eval_script": "test -s file_count.txt && echo PASS",
+    "max_steps": 8
+  },
+  {
+    "id": "task_009",
+    "description": "[Khó] Tự viết mã Python, chạy, rồi lưu kết quả — agent tự quyết định trình tự",
+    "instruction": "Viết một đoạn mã Python tính tổng các số nguyên từ 1 đến 100, chạy đoạn mã đó để lấy kết quả, sau đó lưu kết quả in ra vào file python_sum.txt",
+    "eval_type": "functional",
+    "eval_script": "test -f python_sum.txt && grep -q 5050 python_sum.txt && echo PASS",
+    "max_steps": 12
+  },
+  {
+    "id": "task_010",
+    "description": "[Khó] Chuỗi nhiều bước phụ thuộc nhau: Python -> file -> calculator -> file",
+    "instruction": "Tính giai thừa của 5 (5!) bằng cách tự viết mã Python, lưu kết quả vào file factorial.txt. Sau đó dùng công cụ tính toán để tính căn bậc hai của kết quả giai thừa đó (gợi ý: luỹ thừa 0.5), rồi lưu kết quả căn bậc hai vào file sqrt_result.txt",
+    "eval_type": "functional",
+    "eval_script": "test -f factorial.txt && grep -q 120 factorial.txt && test -f sqrt_result.txt && echo PASS",
+    "max_steps": 12
+  }
+]
