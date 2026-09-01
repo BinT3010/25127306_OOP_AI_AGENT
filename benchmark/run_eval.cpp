@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
     agent::BatchReport report = runner.run_batch(tasks);
 
     std::println("\n╔══════════════════════════════════════════════╗");
-    std::println("║              KẾT QUẢ BENCHMARK                ║");
+    std::println("║              KẾT QUẢ BENCHMARK               ║");
     std::println("╚══════════════════════════════════════════════╝");
     std::ranges::sort(report.results);  // C++20 spaceship: sắp điểm giảm dần (xem TaskRunResult::operator<=>)
     for (const auto& r : report.results) {

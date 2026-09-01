@@ -1,0 +1,24 @@
+# Build artifacts
+build/
+bin/
+*.o
+*.a
+*.so
+
+# Runtime-generated files
+agent_workspace/
+benchmark_runs/
+trajectory_*.json
+*.sqlite3
+
+# Editor/OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
