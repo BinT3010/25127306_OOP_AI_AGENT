@@ -16,6 +16,7 @@
 #include "../src/client/mock_llm_client.h"
 #include "../src/tools/calculator_tool.h"
 #include "../src/tools/file_tool.h"
+#include "../src/tools/word_count_tool.h"
 
 namespace {
 std::filesystem::path make_tmp_dir(const std::string& name) {
@@ -253,3 +254,51 @@ TEST_CASE("AgentLoopBuilder: build() ném ConfigException nếu thiếu tham s�
     agent::AgentLoopBuilder builder;
     CHECK_THROWS_AS(builder.build(), agent::ConfigException);
 }
+
+// ============================== Grounding check (Final Answer vs Observation) ==============================
+
+TEST_CASE("AgentLoop: grounding check từ chối Final Answer mâu thuẫn với Observation của word_count, "
+          "buộc model trả lời lại đúng con số") {
+    // Tái hiện đúng lỗi thực tế: word_count trả về Observation "Số từ: 7" cho câu
+    // "Tôi yêu lập trình hướng đối tượng" (7 token cách nhau bởi khoảng trắng), nhưng
+    // lượt đầu model lại tự bịa Final Answer là "5 từ" — mâu thuẫn với Observation.
+    agent::MockLLMClient mock;
+    mock.enqueue_tool_call("dem tu", "word_count", R"({"text":"Tôi yêu lập trình hướng đối tượng"})");
+    mock.enqueue_final_answer("sai", "Câu này có 5 từ.");   // KHÔNG khớp Observation ("Số từ: 7")
+    mock.enqueue_final_answer("dung", "Câu này có 7 từ.");  // Sau khi bị từ chối, model trả lời lại đúng
+
+    agent::ToolRegistry reg;
+    reg.register_tool(std::make_unique<agent::WordCountTool>());
+    agent::NativeEnvironment env(make_tmp_dir("grounding_wordcount"));
+
+    agent::AgentLoop loop(mock, reg, env, agent::ChatOptions{.model = "mock"});
+    auto traj = loop.run("t9", "dem tu");
+
+    REQUIRE(traj.steps.size() == 3);
+    CHECK(traj.steps[0].action.type == "tool_call");
+    CHECK(traj.steps[0].tool_result == "Số từ: 7");
+    CHECK(traj.steps[1].action.type == "final_answer");
+    CHECK_FALSE(traj.steps[1].tool_success);  // lượt trả lời sai ("5 từ") bị grounding check từ chối
+    CHECK(traj.steps[2].action.type == "final_answer");
+    CHECK(traj.success);
+    CHECK(traj.final_answer == "Câu này có 7 từ.");
+}
+
+TEST_CASE("AgentLoop: grounding check KHÔNG can thiệp khi Observation không phải kết quả từ "
+          "word_count/calculator (vd file trả về số byte không liên quan)") {
+    agent::MockLLMClient mock;
+    mock.enqueue_tool_call("ghi file", "file", R"({"action":"write_file","path":"c.txt","content":"x"})");
+    mock.enqueue_final_answer("xong", "done");  // KHÔNG chứa "1" (số byte) — vẫn phải được chấp nhận
+
+    agent::ToolRegistry reg;
+    reg.register_tool(std::make_unique<agent::FileTool>());
+    agent::NativeEnvironment env(make_tmp_dir("grounding_file_no_false_positive"));
+
+    agent::AgentLoop loop(mock, reg, env, agent::ChatOptions{.model = "mock"});
+    auto traj = loop.run("t10", "ghi file");
+
+    REQUIRE(traj.steps.size() == 2);
+    CHECK(traj.success);
+    CHECK(traj.final_answer == "done");
+}
+

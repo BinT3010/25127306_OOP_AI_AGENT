@@ -59,6 +59,11 @@ struct CliArgs {
     std::string ollama_url = "http://localhost:11434";
     bool use_mock = false;
     int max_steps = 10;
+    // Mặc định thấp hơn giá trị mặc định của thư viện (ChatOptions::temperature = 0.7):
+    // một agent dùng tool và phải trích dẫn CHÍNH XÁC số liệu Observation (word_count,
+    // calculator...) cần độ ngẫu nhiên thấp hơn một chatbot trò chuyện thông thường —
+    // temperature càng cao, model càng dễ "diễn giải lại" thay vì chép đúng nguyên văn.
+    double temperature = 0.2;
     std::string instruction;
 };
 
@@ -73,6 +78,8 @@ CliArgs parse_args(int argc, char** argv) {
             args.ollama_url = argv[++i];
         } else if (a == "--max-steps" && i + 1 < argc) {
             args.max_steps = std::stoi(argv[++i]);
+        } else if (a == "--temperature" && i + 1 < argc) {
+            args.temperature = std::stod(argv[++i]);
         } else if (a == "--mock") {
             args.use_mock = true;
         } else {
@@ -91,7 +98,8 @@ int main(int argc, char** argv) {
     CliArgs args = parse_args(argc, argv);
     if (args.instruction.empty()) {
         std::println(stderr,
-                      "Cách dùng: {} [--model <tên>] [--ollama-url <url>] [--max-steps N] [--mock] \"<nhiệm vụ>\"",
+                      "Cách dùng: {} [--model <tên>] [--ollama-url <url>] [--max-steps N] "
+                      "[--temperature <0.0-1.0>] [--mock] \"<nhiệm vụ>\"",
                       argv[0]);
         std::println(stderr, "Ví dụ: {} \"Tính 15 nhân 17 rồi lưu kết quả vào result.txt\"", argv[0]);
         return 1;
@@ -129,6 +137,7 @@ int main(int argc, char** argv) {
 
     agent::ChatOptions chat_options;
     chat_options.model = args.model;
+    chat_options.temperature = args.temperature;
 
     agent::AgentLoop::Config loop_config;
     loop_config.max_steps = args.max_steps;

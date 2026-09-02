@@ -18,6 +18,7 @@
 #include "../src/tools/memory_tool.h"
 #include "../src/tools/tool_registry.h"
 #include "../src/tools/web_search_tool.h"
+#include "../src/tools/word_count_tool.h"
 
 using json = nlohmann::json;
 
@@ -105,6 +106,30 @@ TEST_CASE("SandboxEnvironment: is_command_allowed chặn lệnh nguy hiểm") {
     agent::SandboxEnvironment sbox(make_tmp_dir("sandbox_cmd"));
     CHECK_FALSE(sbox.is_command_allowed("sudo rm -rf /"));
     CHECK(sbox.is_command_allowed("echo hello"));
+}
+
+TEST_CASE("WordCountTool: đếm đúng với khoảng trắng ASCII bình thường") {
+    agent::WordCountTool wc;
+    agent::NativeEnvironment env(make_tmp_dir("wordcount_ascii"));
+    auto run = [&](const std::string& text) { return wc.execute(json{{"text", text}}.dump(), env); };
+
+    CHECK(run("Tôi yêu lập trình hướng đối tượng").output == "Số từ: 7");
+    CHECK(run("lập trình hướng đối tượng").output == "Số từ: 5");
+    CHECK(run("").output == "Số từ: 0");
+    CHECK(run("   Tôi   yêu   ").output == "Số từ: 2");  // nhiều dấu cách liên tiếp / thừa đầu-cuối
+    CHECK(run("Tôi\tyêu\nlập").output == "Số từ: 3");    // tab và xuống dòng cũng là dấu phân cách
+}
+
+TEST_CASE("WordCountTool: không đếm thiếu khi 2 từ bị nối bởi non-breaking space "
+          "(U+00A0 — Word hay tự chèn) thay vì dấu cách thường") {
+    agent::WordCountTool wc;
+    agent::NativeEnvironment env(make_tmp_dir("wordcount_nbsp"));
+    auto run = [&](const std::string& text) { return wc.execute(json{{"text", text}}.dump(), env); };
+
+    // "Tôi<NBSP>yêu lập" — cách đếm cũ (istringstream, chỉ nhận whitespace ASCII)
+    // sẽ gộp "Tôi" và "yêu" thành 1 token và trả về 2 (SAI). Phải ra 3.
+    CHECK(run("Tôi\xC2\xA0yêu lập").output == "Số từ: 3");
+    CHECK(run("một\xE2\x80\x83hai" "\xE3\x80\x80" "ba").output == "Số từ: 3");  // en-space, ideographic space
 }
 
 TEST_CASE("DateTimeTool: diff_days và add_days tính đúng theo lịch") {

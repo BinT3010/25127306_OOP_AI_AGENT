@@ -14,6 +14,21 @@
 # libcurl-dev, libsqlite3-dev, nlohmann-json3-dev. Xem README.md.
 
 cmake_minimum_required(VERSION 3.20)
+
+# ---------------------------------------------------------------------------
+# Tự động tìm compiler hỗ trợ C++26 (g++-14 trở lên) NẾU người dùng chưa tự
+# chỉ định qua -DCMAKE_CXX_COMPILER=... — để `cmake ..` chạy được ngay cả khi
+# quên thêm cờ, miễn máy đã cài sẵn một trong các bản dưới đây. Phải đặt
+# TRƯỚC project() vì CMAKE_CXX_COMPILER không thể đổi sau khi project() đã
+# chạy.
+# ---------------------------------------------------------------------------
+if(NOT CMAKE_CXX_COMPILER)
+    find_program(AGENT_GXX_C26 NAMES g++-14 g++-15 g++-16)
+    if(AGENT_GXX_C26)
+        set(CMAKE_CXX_COMPILER ${AGENT_GXX_C26})
+    endif()
+endif()
+
 project(OopAiAgentFramework CXX)
 
 # ---------------------------------------------------------------------------

@@ -4,13 +4,45 @@
  */
 #include "agent_loop.h"
 
+#include <algorithm>
 #include <chrono>
+#include <optional>
+#include <regex>
 #include <sstream>
+#include <vector>
 
 #include "../util/exceptions.h"
 #include "action_parser.h"
 
 namespace agent {
+
+namespace {
+
+/// Tìm con số (nguyên hoặc thập phân, có thể âm) DUY NHẤT xuất hiện trong một
+/// chuỗi Observation. Trả về std::nullopt nếu Observation không có số nào,
+/// hoặc có từ 2 số trở lên — trường hợp đó ta không thể biết chắc con số nào
+/// là "kết quả chính" (ví dụ Observation của web_search/file/memory thường
+/// chứa nhiều số không liên quan như ngày tháng, độ dài...), nên bỏ qua kiểm
+/// tra để tránh báo động giả. Hàm này chỉ nhắm tới các tool có kết quả là
+/// MỘT giá trị số rõ ràng, ví dụ word_count ("Số từ: 7") hay calculator
+/// ("255") — đúng lớp lỗi thực tế đã quan sát được (agent tự bịa lại số thay
+/// vì trích dẫn đúng Observation).
+std::optional<std::string> extract_single_number_if_unambiguous(const std::string& text) {
+    static const std::regex kNumberRe(R"((-?\d+(?:\.\d+)?))");
+    auto it = std::sregex_iterator(text.begin(), text.end(), kNumberRe);
+    const auto end = std::sregex_iterator();
+    std::optional<std::string> found;
+    int count = 0;
+    for (; it != end; ++it) {
+        found = it->str();
+        ++count;
+    }
+    if (count != 1) return std::nullopt;
+    return found;
+}
+
+}  // namespace
+
 
 AgentLoop::AgentLoop(LLMClient& llm, ToolRegistry& tools, Environment& env, ChatOptions chat_options,
                       SkillLoader* skill_loader, Config config)
@@ -36,6 +68,22 @@ std::string AgentLoop::build_system_prompt(const std::string& instruction) const
            "2) Khi đã đủ thông tin để trả lời:\n"
            "Thought: <suy luận ngắn gọn>\n"
            "Final Answer: <câu trả lời cuối cùng, đầy đủ>\n";
+    oss << "\n## Quy tắc bắt buộc về tính trung thực với Observation\n"
+           "Khi một Observation (kết quả tool ở lượt trước) đã cung cấp một con số hoặc dữ kiện cụ "
+           "thể, bạn PHẢI dùng ĐÚNG NGUYÊN giá trị đó trong Thought và Final Answer tiếp theo. "
+           "TUYỆT ĐỐI KHÔNG được tự tính/suy luận lại bằng kiến thức hoặc trí nhớ của bạn để thay "
+           "thế kết quả tool đã trả về — kể cả khi bạn nghĩ mình biết một đáp án khác. Nếu bạn cho "
+           "rằng tool trả về sai, hãy nêu rõ nghi ngờ đó trong Thought và có thể gọi lại tool để "
+           "xác nhận, nhưng không được âm thầm thay số liệu.\n"
+           "Ví dụ CỤ THỂ (bắt buộc làm theo đúng khuôn mẫu này, không chỉ đọc hiểu ý mà phải lặp "
+           "lại đúng cách trình bày số liệu):\n"
+           "  - Observation: \"Số từ: 7\"\n"
+           "  - Final Answer ĐÚNG: \"Câu 'Tôi yêu lập trình hướng đối tượng' có 7 từ.\" (chữ số Ả "
+           "Rập '7', lấy nguyên văn từ Observation)\n"
+           "  - Final Answer SAI (không được làm): \"...có 5 từ.\" (số bịa, không khớp Observation), "
+           "\"...có bảy từ.\" (viết bằng chữ thay vì chữ số Ả Rập), \"...khoảng 7-8 từ.\" (làm tròn/"
+           "phỏng đoán thay vì trích nguyên văn).\n"
+           "Quy tắc tương tự áp dụng cho mọi tool trả về một con số duy nhất (vd calculator).\n";
 
     if (skill_loader_ != nullptr) {
         auto selected = skill_loader_->select_for_task(instruction);
@@ -161,10 +209,62 @@ Trajectory AgentLoop::run(const std::string& task_id, const std::string& instruc
                         step.thought = final_answer.thought;
                         step.action = StepAction{"final_answer", "", ""};
                         step.tool_result = final_answer.answer;
-                        history.push_back(ChatMessage::assistant(chat_response.content));
-                        trajectory.success = true;
-                        trajectory.final_answer = final_answer.answer;
-                        should_break = true;
+
+                        // Kiểm tra tính nhất quán (grounding check) với Observation ngay trước đó:
+                        // nếu bước liền trước là một lần gọi tool THÀNH CÔNG mà Observation chỉ chứa
+                        // đúng một con số rõ ràng (vd word_count "Số từ: 7", calculator "255"), con số
+                        // đó BẮT BUỘC phải xuất hiện nguyên văn trong Final Answer. Đây chính là lớp
+                        // lỗi thực tế đã quan sát được: model tự "bịa" lại một con số khác thay vì
+                        // trích dẫn đúng kết quả tool. Ta không tự động sửa hộ câu trả lời (làm vậy sẽ
+                        // che giấu lỗi thật của model khỏi trajectory/báo cáo) mà bắt model tự trả lời
+                        // lại — cùng cơ chế với nhánh MalformedAction bên dưới, có giới hạn số lần thử
+                        // nhờ max_steps đã có sẵn nên không thể lặp vô hạn.
+                        //
+                        // Chỉ áp dụng cho các tool mà TOÀN BỘ kết quả của nó CHÍNH LÀ con số cần trả
+                        // lời (word_count, calculator) — KHÔNG áp dụng cho các tool khác (file, exec,
+                        // datetime...) vì Observation của chúng có thể chứa số liệu không liên quan
+                        // (vd "Đã ghi 1 byte vào ..." khi nhiệm vụ thực ra chỉ là "ghi file", không
+                        // phải "ghi bao nhiêu byte") — nếu bắt buộc trích dẫn số đó sẽ tạo báo động giả.
+                        static const std::vector<std::string> kNumericResultTools = {"word_count", "calculator"};
+                        bool grounded = true;
+                        if (!trajectory.steps.empty()) {
+                            const Step& prev = trajectory.steps.back();
+                            const bool prev_is_numeric_tool =
+                                prev.action.type == "tool_call" && prev.tool_success &&
+                                std::ranges::find(kNumericResultTools, prev.action.tool) !=
+                                    kNumericResultTools.end();
+                            if (prev_is_numeric_tool) {
+                                auto expected_number = extract_single_number_if_unambiguous(prev.tool_result);
+                                if (expected_number && final_answer.answer.find(*expected_number) ==
+                                                            std::string::npos) {
+                                    grounded = false;
+                                    logger_.warn(
+                                        "Grounding check thất bại: Final Answer ('{}') không chứa số liệu "
+                                        "'{}' lấy từ Observation gần nhất ('{}'). Yêu cầu model trả lời lại.",
+                                        final_answer.answer, *expected_number, prev.tool_result);
+                                    history.push_back(ChatMessage::assistant(chat_response.content));
+                                    history.push_back(ChatMessage::user(
+                                        "Final Answer của bạn không khớp với Observation gần nhất — giá trị "
+                                        "chính xác (trích nguyên văn từ Observation) là '" + *expected_number +
+                                        "'. Hãy trả lời lại đúng định dạng 'Thought: ...' + 'Final Answer: ...', "
+                                        "viết ĐÚNG con số '" + *expected_number + "' bằng chữ số Ả Rập (không "
+                                        "viết bằng chữ, không làm tròn, không suy luận lại) — copy nguyên văn "
+                                        "giá trị này vào câu trả lời."));
+                                    step.tool_result =
+                                        "(grounding check thất bại — Final Answer không khớp Observation, đã "
+                                        "yêu cầu model trả lời lại) " +
+                                        final_answer.answer;
+                                    step.tool_success = false;
+                                }
+                            }
+                        }
+
+                        if (grounded) {
+                            history.push_back(ChatMessage::assistant(chat_response.content));
+                            trajectory.success = true;
+                            trajectory.final_answer = final_answer.answer;
+                            should_break = true;
+                        }
                     },
                     [&](const ThinkAction& think_action) {
                         step.thought = think_action.thought;
